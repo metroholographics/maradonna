@@ -11,6 +11,14 @@ Leg_Element foot;
 Joint_Element hip;
 Joint_Element knee;
 Joint_Element ankle;
+Joint_Element toe;
+
+Joint_Element* joints_array[4];
+Leg_Element* legs_array[3];
+
+
+int selected_joint;
+
 
 Vector2 get_leg_origin(Leg_Element* l)
 {
@@ -32,6 +40,9 @@ Leg_Element make_leg_element(Joint_Element* origin, float width, float height)
         .x = l.shape.x + (0.5f * l.shape.width),
         .y = l.shape.y + (0.5f * l.shape.height)
     };
+    l.color = RED;
+    l.selected = false;
+    l.rotation = 0.0f;
     return l;
 }
 
@@ -53,6 +64,63 @@ Joint_Element make_joint_element(Leg_Element* from, Leg_Element* to, float radiu
     return j;
 }
 
+void select_joint(Joint_Element** joints)
+{
+    if (!IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return;
+
+    Vector2 mouse_pos = GetMousePosition();
+
+    for (int i = 0; i < 4; i++) {
+        if (joints[i]->connects_from == NULL) continue;
+        if (CheckCollisionPointCircle(mouse_pos, joints[i]->centre_position, JOINT_RADIUS)) {
+            if (selected_joint != -1) {
+                joints_array[selected_joint]->connects_from->selected = false;
+            }
+            joints[i]->connects_from->selected = true;
+            selected_joint = i;
+        } 
+    }
+}
+
+void move_leg(Leg_Element* l) 
+{
+    Vector2 mouse_d = GetMouseDelta();
+    //printf("x %f y %f\n", mouse_d.x, mouse_d.y);
+
+    if (mouse_d.y > 0) {
+        l->rotation -= 2.0f;
+    } else if (mouse_d.y < 0) {
+        l->rotation += 2.0f;
+    }
+        
+}
+
+void handle_leg_elements(Leg_Element** legs)
+{
+    for (int i = 0; i < 3; i++) {
+        if (legs[i]->selected) {
+            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                move_leg(legs[i]);
+            }
+            legs[i]->color = BLUE;
+        } else {
+            legs[i]->color = RED;
+        }
+    }
+}
+
+void update_joint_positions(Joint_Element** joints)
+{
+    // for (int i = 0; i < 3; i++) 
+    // {
+    //     if (i == 0) continue;
+    //     Leg_Element parent = *joints[i]->connects_from;
+    //     float angle_rad = DEG2RAD * parent.rotation;
+    //     joints[i]->centre_position.x = parent.shape.x + cosf(angle_rad) * parent.shape.width;
+    //     joints[i]->centre_position.y = parent.shape.y + sinf(angle_rad) * parent.shape.height;
+    // }
+}
+
 int main (int argc, char* argv[])
 {
     (void)argc; (void)argv;
@@ -70,28 +138,39 @@ int main (int argc, char* argv[])
 
     ankle = make_joint_element(&leg, &foot, JOINT_RADIUS);
 
-    foot = make_leg_element(&ankle, 75.0f, 50.0f);
+    foot = make_leg_element(&ankle, 75.0f, 30.0f);
+
+    toe = make_joint_element(&foot, NULL, JOINT_RADIUS);
 
 
     SetTargetFPS(60);
+    selected_joint = -1;
+
+    joints_array[0] = &hip;
+    joints_array[1] = &knee;
+    joints_array[2] = &ankle;
+    joints_array[3] = &toe;
+   
+    legs_array[0] = &thigh;
+    legs_array[1] = &leg;
+    legs_array[2] = &foot;
+    
     while (!WindowShouldClose())
     {
-        static float rotation = 0;
-        // rotation += 0.05f;
-        // if (rotation >= 360.0f) rotation = 0.0f;
 
-        // if (IsKeyPressed(KEY_SPACE)) {
-        //     rotation = 0.0f;
-        // }
+        select_joint(joints_array);
+        update_joint_positions(joints_array);
+        handle_leg_elements(legs_array);
 
         BeginDrawing();
             ClearBackground(P_DARK_BLUE);
-            DrawRectanglePro(thigh.shape, get_leg_origin(&thigh), rotation, RED);
-            DrawRectanglePro(leg.shape, get_leg_origin(&leg), rotation, RED);
-            DrawRectanglePro(foot.shape, get_leg_origin(&foot), rotation, RED);
+            DrawRectanglePro(thigh.shape, get_leg_origin(&thigh), thigh.rotation, thigh.color);
+            DrawRectanglePro(leg.shape, get_leg_origin(&leg), leg.rotation, leg.color);
+            DrawRectanglePro(foot.shape, get_leg_origin(&foot), foot.rotation, foot.color);
             DrawCircleV(hip.centre_position, hip.radius, GREEN);
             DrawCircleV(knee.centre_position, knee.radius, GREEN);
             DrawCircleV(ankle.centre_position, ankle.radius, GREEN);
+            DrawCircleV(toe.centre_position, toe.radius, GREEN);
         EndDrawing();
     }
 
