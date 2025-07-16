@@ -88,9 +88,9 @@ void move_leg(Leg_Element* l)
     //printf("x %f y %f\n", mouse_d.x, mouse_d.y);
 
     if (mouse_d.y > 0) {
-        l->rotation -= 2.0f;
+        l->rotation -= 0.25f * mouse_d.y;
     } else if (mouse_d.y < 0) {
-        l->rotation += 2.0f;
+        l->rotation += 0.25 * -mouse_d.y;
     }
         
 }
@@ -111,14 +111,23 @@ void handle_leg_elements(Leg_Element** legs)
 
 void update_joint_positions(Joint_Element** joints)
 {
-    // for (int i = 0; i < 3; i++) 
-    // {
-    //     if (i == 0) continue;
-    //     Leg_Element parent = *joints[i]->connects_from;
-    //     float angle_rad = DEG2RAD * parent.rotation;
-    //     joints[i]->centre_position.x = parent.shape.x + cosf(angle_rad) * parent.shape.width;
-    //     joints[i]->centre_position.y = parent.shape.y + sinf(angle_rad) * parent.shape.height;
-    // }
+    for (int i = 0; i < 4; i++) 
+    {
+        if (i == 0) continue;
+        Leg_Element parent = *joints[i]->connects_from;
+        float dx = -parent.shape.width;
+        float dy =  parent.shape.height;
+        float angle = DEG2RAD * parent.rotation;
+        float rotated_x = dx * cosf(angle) - dy * sinf(angle);
+        float rotated_y = dx * sinf(angle) + dy * cosf(angle);
+
+        joints[i]->centre_position.x = parent.shape.x + rotated_x;
+        joints[i]->centre_position.y = parent.shape.y + rotated_y;
+        if (joints[i]->connects_to != NULL) {
+            joints[i]->connects_to->shape.x = joints[i]->centre_position.x;
+            joints[i]->connects_to->shape.y = joints[i]->centre_position.y;
+        }
+    }
 }
 
 int main (int argc, char* argv[])
