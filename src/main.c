@@ -13,7 +13,7 @@ Joint_Element knee;
 Joint_Element ankle;
 Joint_Element toe;
 
-Joint_Element* joints_array[4];
+Joint_Element* joints_array[JOINT_COUNT];
 Leg_Element* legs_array[3];
 
 
@@ -99,13 +99,77 @@ void handle_leg_elements(Leg_Element** legs)
 {
     for (int i = 0; i < 3; i++) {
         if (legs[i]->selected) {
-            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-                move_leg(legs[i]);
-            }
             legs[i]->color = BLUE;
         } else {
             legs[i]->color = RED;
         }
+        legs[i]->shape.x = legs[i]->origin->centre_position.x;
+        legs[i]->shape.y = legs[i]->origin->centre_position.y;
+    }
+}
+
+
+float vec2_angle(Vector2 v)
+{
+    if (v.x == 0) return 0;
+    float angle = atan(v.y / v.x);
+
+    if (v.y < 0 && v.x < 0) angle += PI;
+    else if (v.x < 0) angle += PI;
+    return angle;
+}
+
+Vector2 get_rotated_end(Leg_Element l)
+{
+    float dx = -l.shape.width;
+    float dy = l.shape.height;
+    float angle = DEG2RAD * l.rotation;
+    float rx = dx * cosf(angle) - dy * sinf(angle);
+    float ry = dx * sinf(angle) + dy * cosf(angle);
+    return (Vector2) {rx, ry};
+}
+
+Vector2 end_joint_follow(Leg_Element *l, float x, float y)
+{
+    Vector2 t = (Vector2) {x, y};
+    Vector2 rotated_pos = get_rotated_end(*l);
+
+    Vector2 dir = Vector2Subtract(t, rotated_pos);
+    float angle = vec2_angle(dir);
+    l->rotation = RAD2DEG * angle;
+
+    rotated_pos.x = t.x - (l->shape.width)*cosf(angle);
+    rotated_pos.y = t.y - (l->shape.width)*sinf(angle);
+    return rotated_pos;
+}
+
+Vector2 origin_joint_update(Leg_Element *l, Vector2 end_pos)
+{
+    Vector2 b;
+    float angle = DEG2RAD * l->rotation;
+    b.x = end_pos.x - l->shape.width * cosf(angle);
+    b.y = end_pos.y - l->shape.width * sinf(angle);
+    return b;
+}
+
+void handle_joint_positions(Joint_Element** joints)
+{
+    Joint_Element* end_joint = joints[JOINT_COUNT - 1];
+    Leg_Element* connected_leg = end_joint->connects_from;
+    if (connected_leg == NULL) return;
+
+    end_joint->centre_position = end_joint_follow(connected_leg, GetMouseX(), GetMouseY());
+
+    for (int i = JOINT_COUNT-1; i >= 0; i--) 
+    {
+        Leg_Element* connected_leg = joints[i]->connects_from;
+        if (connected_leg == NULL) break;
+        Vector2 end_pos = joints[i]->centre_position;
+        Vector2 c = (Vector2) {connected_leg->shape.x, connected_leg->shape.y};
+        Vector2 dir = Vector2Subtract(end_pos, c);
+        float angle = vec2_angle(dir);
+        connected_leg->rotation = RAD2DEG * angle;
+        connected_leg->origin->centre_position = origin_joint_update(connected_leg, end_pos);
     }
 }
 
@@ -115,14 +179,11 @@ void update_joint_positions(Joint_Element** joints)
     {
         if (i == 0) continue;
         Leg_Element parent = *joints[i]->connects_from;
-        float dx = -parent.shape.width;
-        float dy =  parent.shape.height;
-        float angle = DEG2RAD * parent.rotation;
-        float rotated_x = dx * cosf(angle) - dy * sinf(angle);
-        float rotated_y = dx * sinf(angle) + dy * cosf(angle);
 
-        joints[i]->centre_position.x = parent.shape.x + rotated_x;
-        joints[i]->centre_position.y = parent.shape.y + rotated_y;
+        Vector2 rotated = get_rotated_end(parent);
+
+        joints[i]->centre_position.x = parent.shape.x + rotated.x;
+        joints[i]->centre_position.y = parent.shape.y + rotated.y;
         if (joints[i]->connects_to != NULL) {
             joints[i]->connects_to->shape.x = joints[i]->centre_position.x;
             joints[i]->connects_to->shape.y = joints[i]->centre_position.y;
@@ -151,7 +212,6 @@ int main (int argc, char* argv[])
 
     toe = make_joint_element(&foot, NULL, JOINT_RADIUS);
 
-
     SetTargetFPS(60);
     selected_joint = -1;
 
@@ -168,7 +228,10 @@ int main (int argc, char* argv[])
     {
 
         select_joint(joints_array);
-        update_joint_positions(joints_array);
+        // update_joint_positions(joints_array);
+
+        
+        handle_joint_positions(joints_array);
         handle_leg_elements(legs_array);
 
         BeginDrawing();
