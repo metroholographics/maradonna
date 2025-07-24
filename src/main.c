@@ -23,9 +23,6 @@ int selected_joint;
 Vector2 get_leg_origin(Leg_Element* l)
 {
     Vector2 v = (Vector2) {.x = l->shape.width, .y = 0};
-    //Vector2 v = (Vector2) {.x = 0, .y = l->shape.height / 2.0f};
-    //Vector2 v = (Vector2) {.x = 0, .y = 0};
-    //if (l == &leg) v.x *= -1;
     return v;
 }
 
@@ -35,15 +32,20 @@ Leg_Element make_leg_element(Joint_Element* origin, float width, float height)
     l.origin = origin;
     l.shape.width = width;
     l.shape.height = height;
-    l.shape.x = l.origin->centre_position.x;
-    l.shape.y = l.origin->centre_position.y;
+    l.rotation = 0.0f;
+
+    Vector2 origin_offset = get_leg_origin(&l);
+
+    l.shape.x = l.origin->centre_position.x - origin_offset.x;
+    l.shape.y = l.origin->centre_position.y - origin_offset.y;
+
     l.centre_pos = (Vector2) {
         .x = l.shape.x + (0.5f * l.shape.width),
         .y = l.shape.y + (0.5f * l.shape.height)
     };
     l.color = RED;
     l.selected = false;
-    l.rotation = 0.0f;
+
     return l;
 }
 
@@ -56,10 +58,15 @@ Joint_Element make_joint_element(Leg_Element* from, Leg_Element* to, float radiu
         .radius = radius,
     };
     if (from != NULL) {
-        j.centre_position = (Vector2) {
-            .x = j.connects_from->shape.x - j.connects_from->shape.width,
-            .y = j.connects_from->shape.y + j.connects_from->shape.height
+        Vector2 origin_offset = get_leg_origin(from);
+         j.centre_position = (Vector2) {
+            .x = from->shape.x + origin_offset.x,
+            .y = from->shape.y + origin_offset.y
         };
+        // j.centre_position = (Vector2) {
+        //     .x = j.connects_from->shape.x - j.connects_from->shape.width,
+        //     .y = j.connects_from->shape.y + j.connects_from->shape.height
+        // };
     }
 
     return j;
@@ -104,7 +111,7 @@ void handle_leg_elements(Leg_Element** legs)
     for (int i = 0; i < 3; i++) {
         if (legs[i]->selected) {
             legs[i]->color = BLUE;
-            //move_leg(legs[i]);
+            move_leg(legs[i]);
         } else {
             legs[i]->color = RED;
         }
@@ -133,7 +140,7 @@ Vector2 get_rotated_end(Leg_Element l)
 
 void update_joint_positions(Joint_Element** joints)
 {
-    for (int i = 0; i < 4; i++) 
+    for (int i = 0; i < JOINT_COUNT; i++) 
     {
         if (i == 0) continue;
         Leg_Element parent = *joints[i]->connects_from;
@@ -152,47 +159,71 @@ void update_joint_positions(Joint_Element** joints)
 void solve_ik(Vector2 target, Joint_Element** joints, int joint_count)
 {
     Vector2 positions[JOINT_COUNT];
+
     for (int i = 0; i < joint_count; i++) {
         positions[i] = joints[i]->centre_position;
     }
 
     positions[joint_count - 1] = target;
     for (int i = joint_count - 2; i >= 0; i--) {
-        float len = Vector2Length((Vector2){
-            joints[i+1]->connects_from->shape.width,
-            joints[i+1]->connects_from->shape.height
-        });
+        Leg_Element* l = joints[i + 1]->connects_from;
+        float len = Vector2Length((Vector2) {l->shape.width, l->shape.height});
         Vector2 dir = Vector2Normalize(Vector2Subtract(positions[i], positions[i+1]));
         positions[i] = Vector2Add(positions[i+1], Vector2Scale(dir, len));
     }
 
     positions[0] = joints[0]->centre_position;
     for (int i = 1; i < joint_count; i++) {
-        float len = Vector2Length((Vector2){
-            joints[i]->connects_from->shape.width,
-            joints[i]->connects_from->shape.height
-        });
+        Leg_Element* l = joints[i]->connects_from;
+        float len = Vector2Length((Vector2) {l->shape.width, l->shape.height});
         Vector2 dir = Vector2Normalize(Vector2Subtract(positions[i], positions[i - 1]));
         positions[i] = Vector2Add(positions[i - 1], Vector2Scale(dir, len));
     }
 
     for (int i = 0; i < joint_count - 1; i++) {
         Joint_Element* j = joints[i + 1];
-        Leg_Element* l = joints[i+1]->connects_from;
-        j->centre_position = positions[i+1];
-        
-        
-        l->shape.x = positions[i].x;
-        l->shape.y = positions[i].y;
-        Vector2 diff = Vector2Subtract(positions[i + 1], positions[i]);
-        // float angle_rad = atan2f(diff.y, diff.x);
-        // Vector2 offset = (Vector2) {
-        //     .x = l->shape.width * cosf(angle_rad),
-        //     .y = l->shape.height * sinf(angle_rad)
-        // };
-        // l->shape.x = positions[i].x - offset.x;
-        // l->shape.y = positions[i].y - offset.y;
-        l->rotation = RAD2DEG * atan2(diff.y, diff.x) - 180.0f;
+        Leg_Element* l = j->connects_from;
+
+        Vector2 jointA = positions[i];
+        Vector2 jointB = positions[i + 1];
+        Vector2 diff = Vector2Subtract(jointB, jointA);
+
+
+        float angle = RAD2DEG * atan2(diff.y, diff.x);
+        l->rotation = angle - 180.0f;
+
+        Vector2 origin = get_leg_origin(l);
+        float angle_rad = DEG2RAD * l->rotation;
+
+        Vector2 rotated_origin = {
+            .x = origin.x * cosf(angle_rad) - origin.y * sinf(angle_rad),
+            .y = origin.x * sinf(angle_rad) + origin.y * cosf(angle_rad)
+        };
+        l->shape.x = jointA.x - rotated_origin.x;
+        l->shape.y = jointA.y - rotated_origin.y;
+
+        j->centre_position = jointB;
+    }
+
+    if (joints[0]->connects_to != NULL) {
+        Leg_Element* thigh = joints[0]->connects_to;
+
+        Vector2 jointA = positions[0];
+        Vector2 jointB = positions[1];
+        Vector2 diff = Vector2Subtract(jointB, jointA);
+
+        float angle = RAD2DEG * atan2f(diff.y, diff.x);
+        thigh->rotation = angle - 180.0f;
+
+        Vector2 origin = get_leg_origin(thigh);
+        float angle_rad = DEG2RAD * thigh->rotation;
+
+        Vector2 rotated_origin = {
+            .x = origin.x * cosf(angle_rad) - origin.y * sinf(angle_rad),
+            .y = origin.x * sinf(angle_rad) + origin.y * cosf(angle_rad)
+        };
+        thigh->shape.x = jointA.x - rotated_origin.x;
+        thigh->shape.y = jointA.y - rotated_origin.y;
     }
 }
 
@@ -228,20 +259,21 @@ int main (int argc, char* argv[])
     legs_array[0] = &thigh;
     legs_array[1] = &leg;
     legs_array[2] = &foot;
+    update_joint_positions(joints_array);
     
     while (!WindowShouldClose())
     {
 
         select_joint(joints_array);
-        handle_leg_elements(legs_array);
-
         
-
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && foot.selected) {
             Vector2 mouse = GetMousePosition();
             solve_ik(mouse, joints_array, JOINT_COUNT);
-        }
+        } 
+
         update_joint_positions(joints_array);
+        handle_leg_elements(legs_array);
+        
 
         //handle_joint_positions(joints_array);
 
