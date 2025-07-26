@@ -39,6 +39,8 @@ Vector2 end_joint_follow(Leg_Element *l, float x, float y);
 Vector2 origin_joint_update(Leg_Element *l, Vector2 end_pos);
 void handle_joint_positions(Joint_Element** joints);
 void solve_ik(Vector2 target, Joint_Element** joints, int joint_count);
+void solve_leg_chain(Vector2 target, Joint_Element** joints, int joint_count);
+void rotate_legs(Leg_Element** legs, Joint_Element** joints);
 
 #endif
 
