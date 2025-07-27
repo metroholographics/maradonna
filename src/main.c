@@ -124,33 +124,6 @@ float vec2_angle(Vector2 v)
     return angle;
 }
 
-Vector2 get_rotated_end(Leg_Element l)
-{
-    float dx = -l.shape.width;
-    float dy = l.shape.height;
-    float angle = DEG2RAD * l.rotation;
-    float rx = dx * cosf(angle) - dy * sinf(angle);
-    float ry = dx * sinf(angle) + dy * cosf(angle);
-    return (Vector2) {rx, ry};
-}
-
-void update_joint_positions(Joint_Element** joints)
-{
-    for (int i = 0; i < JOINT_COUNT; i++) 
-    {
-        if (i == 0) continue;
-        Leg_Element parent = *joints[i]->connects_from;
-
-        Vector2 rotated = get_rotated_end(parent);
-
-        joints[i]->centre_position.x = parent.shape.x + rotated.x;
-        joints[i]->centre_position.y = parent.shape.y + rotated.y;
-        if (joints[i]->connects_to != NULL) {
-            joints[i]->connects_to->shape.x = joints[i]->centre_position.x;
-            joints[i]->connects_to->shape.y = joints[i]->centre_position.y;
-        }
-    }
-}
 
 void solve_leg_chain(Vector2 target, Joint_Element** joints, int joint_count)
 {
@@ -200,14 +173,55 @@ void solve_leg_chain(Vector2 target, Joint_Element** joints, int joint_count)
 
 }
 
+Vector2 get_rotated_end(Leg_Element l)
+{
+    float dx = -l.shape.width;
+    float dy = l.shape.height;
+    float angle = DEG2RAD * l.rotation;
+    float rx = dx * cosf(angle) - dy * sinf(angle);
+    float ry = dx * sinf(angle) + dy * cosf(angle);
+    return (Vector2) {rx, ry};
+}
+
+void update_joint_positions(Joint_Element** joints)
+{
+    for (int i = 0; i < JOINT_COUNT; i++) 
+    {
+        if (i == 0) continue;
+        Leg_Element parent = *joints[i]->connects_from;
+
+        Vector2 rotated = get_rotated_end(parent);
+
+        joints[i]->centre_position.x = parent.shape.x + rotated.x;
+        joints[i]->centre_position.y = parent.shape.y + rotated.y;
+        if (joints[i]->connects_to != NULL) {
+            joints[i]->connects_to->shape.x = joints[i]->centre_position.x;
+            joints[i]->connects_to->shape.y = joints[i]->centre_position.y;
+        }
+    }
+}
+
 void rotate_legs(Leg_Element** legs, Joint_Element** joints)
 {
     for (int i = 0; i < JOINT_COUNT; i++) {
-        if (joints[i]->connects_to == NULL) continue;
+        Leg_Element* l = joints[i]->connects_to;
+        if (l == NULL) continue;
+        
         Vector2 pointA = joints[i]->centre_position;
+        Vector2 centre_fixed = joints[i]->centre_position;
+        Vector2 pointA2 = (Vector2) {
+            .x = centre_fixed.x + l->shape.width,
+            .y = centre_fixed.y + l->shape.height,
+        };
         Vector2 pointB = joints[i + 1]->centre_position;
-        float angle = Vector2Angle(pointA, pointB);
-        joints[i]->connects_to->rotation = RAD2DEG * angle;
+        Vector2 diff1 = Vector2Subtract(pointA, pointB);
+        Vector2 diff2 = Vector2Subtract(pointA2, pointB);
+        float angle1 = RAD2DEG * atan2(diff1.y, diff1.x);
+        float angle2 = RAD2DEG * atan2(diff2.y, diff2.x);
+
+        l->rotation = angle1 + angle2;
+        l->shape.x = joints[i]->centre_position.x;
+        l->shape.y = joints[i]->centre_position.y;
     }
 }
 
@@ -270,6 +284,9 @@ int main (int argc, char* argv[])
                 DrawCircleV((Vector2){legs_array[i]->shape.x, legs_array[i]->shape.y}, 4, YELLOW); // leg origin
                 DrawCircleV(legs_array[i]->origin->centre_position, 4, ORANGE); // joint it connects to
             }
+            DrawLine(hip.centre_position.x, hip.centre_position.y, knee.centre_position.x, knee.centre_position.y, BLACK);
+            DrawLine(knee.centre_position.x, knee.centre_position.y, ankle.centre_position.x, ankle.centre_position.y, BLACK);
+            DrawLine(ankle.centre_position.x, ankle.centre_position.y, toe.centre_position.x, toe.centre_position.y, BLACK);
         EndDrawing();
     }
 
