@@ -6,6 +6,7 @@
 
 #define JOINT_RADIUS 10
 #define JOINT_COUNT 4
+#define IK_ITERATIONS 128
 
 #define P_DARK_BLUE (Color) {0xa3, 0xb2, 0xd2, 0xff}
 
@@ -34,13 +35,7 @@ void select_joint(Joint_Element** joints);
 void handle_leg_elements(Leg_Element** legs);
 void move_leg(Leg_Element* l);
 void update_joint_positions(Joint_Element** joints); 
-float vec2_angle(Vector2 v);
-Vector2 end_joint_follow(Leg_Element *l, float x, float y);
-Vector2 origin_joint_update(Leg_Element *l, Vector2 end_pos);
-void handle_joint_positions(Joint_Element** joints);
-void solve_ik(Vector2 target, Joint_Element** joints, int joint_count);
 void solve_leg_chain(Vector2 target, Joint_Element** joints, int joint_count);
-void rotate_legs(Leg_Element** legs, Joint_Element** joints);
-
+void rotate_legs(Joint_Element** joints);
 #endif
 

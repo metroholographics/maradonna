@@ -114,17 +114,6 @@ void handle_leg_elements(Leg_Element** legs)
     }
 }
 
-float vec2_angle(Vector2 v)
-{
-    if (v.x == 0) return 0;
-    float angle = atan(v.y / v.x);
-
-    if (v.y < 0 && v.x < 0) angle += PI;
-    else if (v.x < 0) angle += PI;
-    return angle;
-}
-
-
 void solve_leg_chain(Vector2 target, Joint_Element** joints, int joint_count)
 {
     Vector2 positions[JOINT_COUNT];
@@ -143,28 +132,30 @@ void solve_leg_chain(Vector2 target, Joint_Element** joints, int joint_count)
         total_length += len;
     }
 
-    float len_to_target = Vector2Length(Vector2Subtract(positions[0], t));
-    if (len_to_target >= total_length) {
+    float len_to_target = Vector2Length(Vector2Subtract(t, positions[0]));
+    if (len_to_target > total_length) {
         Vector2 dir = Vector2Subtract(t, positions[2]);
         dir = Vector2Normalize(dir);
-        positions[JOINT_COUNT - 1] = Vector2Add(positions[2], Vector2Scale(dir, lengths[2]));
-    } else {
+        positions[JOINT_COUNT - 1] = Vector2Add(Vector2Scale(dir, lengths[2]), positions[2]);
+    }
+    
+    int i_k_count = 0;
+    for (int i = 0; i < IK_ITERATIONS; i++) {
         positions[JOINT_COUNT - 1] = t;
-    }
-
-    //Backwards
-    for (int i = JOINT_COUNT - 2; i >= 0; i--) {
-        Vector2 dir = Vector2Subtract(positions[i], positions[i + 1]);
-        dir = Vector2Normalize(dir);
-        positions[i] = Vector2Add(positions[i+1], Vector2Scale(dir, lengths[i]));
-    }
-
-    //forwards
-    positions[0] = fixed_start;
-    for (int i = 1; i < joint_count - 1; i++) {
-        Vector2 dir = Vector2Subtract(positions[i], positions[i - 1]);
-        dir = Vector2Normalize(dir);
-        positions[i] = Vector2Add(positions[i - 1], Vector2Scale(dir, lengths[i - 1]));
+        //Backwards
+        for (int i = JOINT_COUNT - 2; i >= 0; i--) {
+            Vector2 dir = Vector2Subtract(positions[i], positions[i + 1]);
+            dir = Vector2Normalize(dir);
+            positions[i] = Vector2Add(positions[i+1], Vector2Scale(dir, lengths[i]));
+        }
+        //forwards
+        positions[0] = fixed_start;
+        for (int i = 1; i < joint_count - 1; i++) {
+            Vector2 dir = Vector2Subtract(positions[i], positions[i - 1]);
+            dir = Vector2Normalize(dir);
+            positions[i] = Vector2Add(positions[i - 1], Vector2Scale(dir, lengths[i - 1]));
+        }
+        i_k_count++;
     }
 
     for (int i = 0; i < JOINT_COUNT; i++) {
@@ -201,25 +192,21 @@ void update_joint_positions(Joint_Element** joints)
     }
 }
 
-void rotate_legs(Leg_Element** legs, Joint_Element** joints)
+void rotate_legs(Joint_Element** joints)
 {
-    for (int i = 0; i < JOINT_COUNT; i++) {
+    for (int i = 0; i < JOINT_COUNT - 1; i++) {
         Leg_Element* l = joints[i]->connects_to;
         if (l == NULL) continue;
-        
-        Vector2 pointA = joints[i]->centre_position;
+        float a = DEG2RAD * l->rotation;
         Vector2 centre_fixed = joints[i]->centre_position;
         Vector2 pointA2 = (Vector2) {
-            .x = centre_fixed.x + l->shape.width,
-            .y = centre_fixed.y + l->shape.height,
+            .x = centre_fixed.x + (cosf(a) * l->shape.width),
+            .y = centre_fixed.y + l->shape.height + (sinf(a) * l->shape.width),
         };
         Vector2 pointB = joints[i + 1]->centre_position;
-        Vector2 diff1 = Vector2Subtract(pointA, pointB);
-        Vector2 diff2 = Vector2Subtract(pointA2, pointB);
-        float angle1 = RAD2DEG * atan2(diff1.y, diff1.x);
-        float angle2 = RAD2DEG * atan2(diff2.y, diff2.x);
-
-        l->rotation = angle1 + angle2;
+        Vector2 diff = Vector2Subtract(pointB, pointA2);
+        float angle = 180.0f + (RAD2DEG * atan2(diff.y, diff.x));
+        l->rotation = angle;
         l->shape.x = joints[i]->centre_position.x;
         l->shape.y = joints[i]->centre_position.y;
     }
@@ -234,11 +221,11 @@ int main (int argc, char* argv[])
     hip = make_joint_element(NULL, &thigh, JOINT_RADIUS);
     hip.centre_position = (Vector2) {WIDTH, 500};
 
-    thigh = make_leg_element(&hip, 100.0f, 50.0f);
+    thigh = make_leg_element(&hip, 120.0f, 50.0f);
 
     knee = make_joint_element(&thigh, &leg, JOINT_RADIUS);
 
-    leg = make_leg_element(&knee, 50.0f, 150.0f);
+    leg = make_leg_element(&knee, 50.0f, 160.0f);
 
     ankle = make_joint_element(&leg, &foot, JOINT_RADIUS);
 
@@ -262,15 +249,15 @@ int main (int argc, char* argv[])
     while (!WindowShouldClose())
     {
         select_joint(joints_array);
-        
+
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && foot.selected) {
             Vector2 mouse = GetMousePosition();
             solve_leg_chain(mouse, joints_array, JOINT_COUNT);
-            rotate_legs(legs_array, joints_array);
+            rotate_legs(joints_array);
         } 
-        //update_joint_positions(joints_array);
-        //handle_leg_elements(legs_array);
-        //handle_joint_positions(joints_array);
+        update_joint_positions(joints_array);
+        handle_leg_elements(legs_array);
+
         BeginDrawing();
             ClearBackground(P_DARK_BLUE);
             DrawRectanglePro(thigh.shape, get_leg_origin(&thigh), thigh.rotation, thigh.color);
@@ -284,106 +271,11 @@ int main (int argc, char* argv[])
                 DrawCircleV((Vector2){legs_array[i]->shape.x, legs_array[i]->shape.y}, 4, YELLOW); // leg origin
                 DrawCircleV(legs_array[i]->origin->centre_position, 4, ORANGE); // joint it connects to
             }
-            DrawLine(hip.centre_position.x, hip.centre_position.y, knee.centre_position.x, knee.centre_position.y, BLACK);
-            DrawLine(knee.centre_position.x, knee.centre_position.y, ankle.centre_position.x, ankle.centre_position.y, BLACK);
-            DrawLine(ankle.centre_position.x, ankle.centre_position.y, toe.centre_position.x, toe.centre_position.y, BLACK);
+            // DrawLine(hip.centre_position.x, hip.centre_position.y, knee.centre_position.x, knee.centre_position.y, BLACK);
+            // DrawLine(knee.centre_position.x, knee.centre_position.y, ankle.centre_position.x, ankle.centre_position.y, BLACK);
+            // DrawLine(ankle.centre_position.x, ankle.centre_position.y, toe.centre_position.x, toe.centre_position.y, BLACK);
         EndDrawing();
     }
 
     CloseWindow();
-}
-
-
-
-Vector2 end_joint_follow(Leg_Element *l, float x, float y)
-{
-    Vector2 t = (Vector2) {x, y};
-    Vector2 rotated_pos = get_rotated_end(*l);
-
-    Vector2 dir = Vector2Subtract(t, rotated_pos);
-    float angle = vec2_angle(dir);
-    l->rotation = RAD2DEG * angle;
-
-    rotated_pos.x = t.x - (l->shape.width)*cosf(angle);
-    rotated_pos.y = t.y - (l->shape.width)*sinf(angle);
-    return rotated_pos;
-}
-
-Vector2 origin_joint_update(Leg_Element *l, Vector2 end_pos)
-{
-    Vector2 b;
-    float angle = DEG2RAD * l->rotation;
-    b.x = end_pos.x - l->shape.width * cosf(angle);
-    b.y = end_pos.y - l->shape.width * sinf(angle);
-    return b;
-}
-
-void handle_joint_positions(Joint_Element** joints)
-{
-    Joint_Element* end_joint = joints[JOINT_COUNT - 1];
-    Leg_Element* connected_leg = end_joint->connects_from;
-    if (connected_leg == NULL) return;
-
-    end_joint->centre_position = end_joint_follow(connected_leg, GetMouseX(), GetMouseY());
-
-    for (int i = JOINT_COUNT-1; i >= 0; i--) 
-    {
-        Leg_Element* connected_leg = joints[i]->connects_from;
-        if (connected_leg == NULL) break;
-        Vector2 end_pos = joints[i]->centre_position;
-        Vector2 c = (Vector2) {connected_leg->shape.x, connected_leg->shape.y};
-        Vector2 dir = Vector2Subtract(end_pos, c);
-        float angle = vec2_angle(dir);
-        connected_leg->rotation = RAD2DEG * angle;
-        connected_leg->origin->centre_position = origin_joint_update(connected_leg, end_pos);
-    }
-}
-
-void solve_ik(Vector2 target, Joint_Element** joints, int joint_count)
-{
-    Vector2 positions[JOINT_COUNT];
-
-    for (int i = 0; i < joint_count; i++) {
-        positions[i] = joints[i]->centre_position;
-    }
-
-    positions[joint_count - 1] = target;
-    for (int i = joint_count - 2; i >= 0; i--) {
-        Leg_Element* l = joints[i + 1]->connects_from;
-        float len = Vector2Length((Vector2) {l->shape.width, l->shape.height});
-        Vector2 dir = Vector2Normalize(Vector2Subtract(positions[i], positions[i+1]));
-        positions[i] = Vector2Add(positions[i+1], Vector2Scale(dir, len));
-    }
-
-    positions[0] = joints[0]->centre_position;
-    for (int i = 1; i < joint_count; i++) {
-        Leg_Element* l = joints[i]->connects_from;
-        float len = Vector2Length((Vector2) {l->shape.width, l->shape.height});
-        Vector2 dir = Vector2Normalize(Vector2Subtract(positions[i], positions[i - 1]));
-        positions[i] = Vector2Add(positions[i - 1], Vector2Scale(dir, len));
-    }
-
-    for (int i = 0; i < joint_count - 1; i++) {
-        Joint_Element* j = joints[i + 1];
-        Leg_Element* l = j->connects_from;
-
-        Vector2 jointA = positions[i];
-        Vector2 jointB = positions[i + 1];
-        Vector2 diff = Vector2Subtract(jointB, jointA);
-
-        float angle = RAD2DEG * atan2(diff.y, diff.x);
-        l->rotation = angle;// - 180.0f;
-
-        Vector2 origin = get_leg_origin(l);
-        float angle_rad = DEG2RAD * l->rotation;
-
-        Vector2 rotated_origin = {
-            .x = origin.x * cosf(angle_rad) - origin.y * sinf(angle_rad),
-            .y = origin.x * sinf(angle_rad) + origin.y * cosf(angle_rad)
-        };
-        l->shape.x = jointA.x - rotated_origin.x;
-        l->shape.y = jointA.y - rotated_origin.y;
-
-        j->centre_position = jointB;
-    }
 }
