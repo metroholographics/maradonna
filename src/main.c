@@ -13,6 +13,8 @@ Joint_Element knee;
 Joint_Element ankle;
 Joint_Element toe;
 
+Ball ball;
+
 Joint_Element* joints_array[JOINT_COUNT];
 Leg_Element* legs_array[3];
 
@@ -41,6 +43,7 @@ Leg_Element make_leg_element(Joint_Element* origin, float width, float height)
     };
     l.color = RED;
     l.selected = false;
+    l.leg_points = (Leg_Points) {0};
 
     return l;
 }
@@ -59,10 +62,6 @@ Joint_Element make_joint_element(Leg_Element* from, Leg_Element* to, float radiu
             .x = from->shape.x + origin_offset.x,
             .y = from->shape.y + origin_offset.y
         };
-        // j.centre_position = (Vector2) {
-        //     .x = j.connects_from->shape.x - j.connects_from->shape.width,
-        //     .y = j.connects_from->shape.y + j.connects_from->shape.height
-        // };
     }
 
     return j;
@@ -179,15 +178,32 @@ void update_joint_positions(Joint_Element** joints)
     for (int i = 0; i < JOINT_COUNT; i++) 
     {
         if (i == 0) continue;
-        Leg_Element parent = *joints[i]->connects_from;
+        Leg_Element* parent = joints[i]->connects_from;
+        Leg_Element* l = parent;
+        float angle = DEG2RAD * l->rotation;
+        l->leg_points.top_right = (Vector2) {l->shape.x, l->shape.y};
+        Vector2 tr = l->leg_points.top_right;
+        l->leg_points.top_left = (Vector2) {
+            .x = tr.x + -l->shape.width * cosf(angle) - 0 * sinf(angle),
+            .y = tr.y + -l->shape.width * sinf(angle) + 0 * cosf(angle)
+        };
+        l->leg_points.bot_left = (Vector2) {
+            .x = tr.x + -l->shape.width * cosf(angle) - l->shape.height * sinf(angle),
+            .y = tr.y + -l->shape.width * sinf(angle) + l->shape.height * cosf(angle)
+        };
+        l->leg_points.bot_right = (Vector2) {
+            .x = tr.x + 0 * cosf(angle) - l->shape.height * sinf(angle),
+            .y = tr.y + 0 * sinf(angle) + l->shape.height * cosf(angle)
+        };
 
-        Vector2 rotated = get_rotated_end(parent);
+        Vector2 rotated = get_rotated_end(*parent);
 
-        joints[i]->centre_position.x = parent.shape.x + rotated.x;
-        joints[i]->centre_position.y = parent.shape.y + rotated.y;
-        if (joints[i]->connects_to != NULL) {
-            joints[i]->connects_to->shape.x = joints[i]->centre_position.x;
-            joints[i]->connects_to->shape.y = joints[i]->centre_position.y;
+        joints[i]->centre_position.x = parent->shape.x + rotated.x;
+        joints[i]->centre_position.y = parent->shape.y + rotated.y;
+        Leg_Element* ll = joints[i]->connects_to;
+        if (ll != NULL) {
+            ll->shape.x = joints[i]->centre_position.x;
+            ll->shape.y = joints[i]->centre_position.y;
         }
     }
 }
@@ -212,6 +228,52 @@ void rotate_legs(Joint_Element** joints)
     }
 }
 
+void update_ball(Ball* b, Leg_Element** legs, float dt)
+{
+    if (IsKeyPressed(KEY_SPACE)) {
+        b->centre_position = (Vector2) {WIDTH/2, HEIGHT/2};
+        b->velocity = (Vector2){0,0};
+        b->acceleration = (Vector2){0,0};
+        b->hit = false;
+    }
+    Vector2 ball_pos = b->centre_position;
+    Vector2 vel = b->velocity;
+    Vector2 acc = b->acceleration;
+
+    if (!ball.hit) {
+        acc.y = GRAVITY * dt;
+    }
+
+    //to-do: figure out velocity and acceleration relationship. I want the ball to stop if acc is 0
+
+    for (int i = 0; i < LEG_COUNT; i++) {
+        Leg_Points lp = legs[i]->leg_points;
+        bool top_hit = CheckCollisionCircleLine(ball_pos, BALL_RADIUS, lp.top_left, lp.top_right);
+        bool left_hit = CheckCollisionCircleLine(ball_pos, BALL_RADIUS, lp.top_left, lp.bot_left);
+        bool bot_hit = CheckCollisionCircleLine(ball_pos, BALL_RADIUS, lp.bot_left, lp.bot_right);
+        bool right_hit = CheckCollisionCircleLine(ball_pos, BALL_RADIUS, lp.top_right, lp.bot_right);
+
+        if (top_hit || left_hit || bot_hit || right_hit) {
+            printf("Hit! "); 
+            ball.hit = true;
+            vel.y = 0;
+            acc.y = 0;
+            break;
+        }
+    }
+    printf("Vel: %f %f, Acc: %f %f\n",vel.x, vel.y, acc.x, acc.y);
+    vel = Vector2Add(vel, acc);
+
+    ball_pos.x += b->velocity.x;
+    ball_pos.y += b->velocity.y;
+
+    b->centre_position.x = ball_pos.x;
+    b->centre_position.y = ball_pos.y;
+    b->velocity = vel;
+    b->acceleration = acc;
+}
+
+
 int main (int argc, char* argv[])
 {
     (void)argc; (void)argv;
@@ -220,18 +282,19 @@ int main (int argc, char* argv[])
 
     hip = make_joint_element(NULL, &thigh, JOINT_RADIUS);
     hip.centre_position = (Vector2) {WIDTH, 500};
-
     thigh = make_leg_element(&hip, 120.0f, 50.0f);
-
     knee = make_joint_element(&thigh, &leg, JOINT_RADIUS);
-
     leg = make_leg_element(&knee, 50.0f, 160.0f);
-
     ankle = make_joint_element(&leg, &foot, JOINT_RADIUS);
-
     foot = make_leg_element(&ankle, 75.0f, 30.0f);
-
     toe = make_joint_element(&foot, NULL, JOINT_RADIUS);
+    ball = (Ball) {
+        .centre_position = (Vector2){WIDTH * 0.5f, HEIGHT * 0.5f},
+        .velocity = (Vector2){0,0},
+        .acceleration = (Vector2){0,0},
+        .radius = BALL_RADIUS,
+        .hit = false
+    };
 
     SetTargetFPS(60);
     selected_joint = -1;
@@ -248,15 +311,19 @@ int main (int argc, char* argv[])
     
     while (!WindowShouldClose())
     {
+        float dt = GetFrameTime();
         select_joint(joints_array);
 
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && foot.selected) {
             Vector2 mouse = GetMousePosition();
             solve_leg_chain(mouse, joints_array, JOINT_COUNT);
             rotate_legs(joints_array);
-        } 
+        }
+
         update_joint_positions(joints_array);
         handle_leg_elements(legs_array);
+
+        update_ball(&ball, legs_array, dt);
 
         BeginDrawing();
             ClearBackground(P_DARK_BLUE);
@@ -268,9 +335,11 @@ int main (int argc, char* argv[])
             DrawCircleV(ankle.centre_position, ankle.radius, GREEN);
             DrawCircleV(toe.centre_position, toe.radius, GREEN);
             for (int i = 0; i < 3; i++) {
-                DrawCircleV((Vector2){legs_array[i]->shape.x, legs_array[i]->shape.y}, 4, YELLOW); // leg origin
-                DrawCircleV(legs_array[i]->origin->centre_position, 4, ORANGE); // joint it connects to
+                draw_leg_points(legs_array[i]);
+                // DrawCircleV((Vector2){legs_array[i]->shape.x, legs_array[i]->shape.y}, 4, YELLOW); // leg origin
+                // DrawCircleV(legs_array[i]->origin->centre_position, 4, ORANGE); // joint it connects to
             }
+            DrawCircleV(ball.centre_position, ball.radius, LIGHTGRAY);
             // DrawLine(hip.centre_position.x, hip.centre_position.y, knee.centre_position.x, knee.centre_position.y, BLACK);
             // DrawLine(knee.centre_position.x, knee.centre_position.y, ankle.centre_position.x, ankle.centre_position.y, BLACK);
             // DrawLine(ankle.centre_position.x, ankle.centre_position.y, toe.centre_position.x, toe.centre_position.y, BLACK);
@@ -278,4 +347,12 @@ int main (int argc, char* argv[])
     }
 
     CloseWindow();
+}
+
+void draw_leg_points(Leg_Element* l)
+{
+    DrawCircleV(l->leg_points.top_left, 4, BLACK);
+    DrawCircleV(l->leg_points.top_right, 4, BLACK);
+    DrawCircleV(l->leg_points.bot_left, 4, BLACK);
+    DrawCircleV(l->leg_points.bot_right, 4, BLACK);
 }
